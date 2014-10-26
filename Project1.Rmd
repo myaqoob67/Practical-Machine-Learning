@@ -1,0 +1,236 @@
+---
+title: "Practical Machine Learning Project"
+author: "Mohamamd Yaqoob"
+date: "Sunday, October 19, 2014"
+output: html_document
+---
+
+Description
+-----------
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+Goal
+-----
+The goal of your project is to predict the manner in which they did the exercise i.e.`"classe"` variable. Describe model building, cross validation, expected out of sample error, rational for choices. The prediction model to be used to predict 20 different test cases.
+
+Models 
+-------
+In this analysis we will analyse the following models and finally based on accuracy decide on the best model choice to use for testing and validation.
+
+* logistic regression model - GBM  
+* Principal Component analysis  
+* Naive Bayes   
+* Random Forest  
+* Trees  
+
+Data Processing
+---------------
+The training data for this project are available here:  
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv  
+The test data are available here:  
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv  
+
+
+```{r}
+
+### check if a data folder exists; if not then create one
+
+### This section need to be performed on once, Hence commenting after the first run###
+### If you are going to restart the whole process, please uncomment these lines of code.####
+
+
+#if (!file.exists("data")) {dir.create("data")}
+
+### file URL and destination file
+#Url1 <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+#file1 <- "./data/pml-training.csv"
+#Url2 <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+#file2 <- "./data/pml-testing.csv"
+
+### download the file and note the time
+#download.file(Url1, destfile = file1)
+#download.file(Url2, destfile = file2)
+#dateDownld <- date()
+```
+
+```{r}
+### read the csv file for training 
+pmltrain <- read.csv("./data/pml-training.csv", na.strings= c("NA",""," "))
+
+
+```
+
+Exploratory Data Analysis
+-------------------------
+
+### Create training, test and validation sets ###
+* Here we load all the required libararies that will help us in this analysis.  
+
+```{r}
+library(caret)
+library(kernlab)
+library(randomForest)
+library(corrplot)
+library(ggplot2)
+library(lattice)
+set.seed(32768)
+```
+
+* Cleaning NAs from the pmltrain data  
+```{r}
+# remove NAs etc
+pmltrain_NAs <- apply(pmltrain, 2, function(x) {sum(is.na(x))})
+pmltrain_clean <- pmltrain[,which(pmltrain_NAs == 0)]
+```
+
+* Here we cleanup up the pmltrain coulumns such as name, timestamps etc to reduce the number of insignificant columns. This will improve processing performance and increase accuracy
+
+```{r}
+# delete columns such as name, timestamps etc
+pmltrain_clean <- pmltrain_clean[8:length(pmltrain_clean)]
+```
+
+Data Partitioning
+-----------------
+
+I divided the training data into train and validation subsets to train our model with 70% of given test data. Once model is prepared I used rest 30% data to cross validate the predicted values.
+
+```{r}
+# split the cleaned testing data into training and cross validation
+idxTrain <- createDataPartition(y = pmltrain_clean$classe, p = 0.7, list = FALSE)
+training <- pmltrain_clean[idxTrain, ]
+crossvald <- pmltrain_clean[-idxTrain, ]
+```
+Here I used the partition as follow:
+
+* Training data - 70% of pml-training.csv  
+* Testing data - 30% of pml-training.csv  
+
+```{r}
+dim(training)
+dim(crossvald)
+```
+
+Model Selection
+--------------
+I plot correlation matrix to see what type of model will probably helpfull.
+
+```{r}
+# plot a correlation matrix
+correlMatrix <- cor(training[, -length(training)])
+corrplot(correlMatrix, order = "FPC", method = "circle", type = "lower", tl.cex = 0.8,  tl.col = rgb(0, 0, 0))
+```
+
+The plot shows that Random Forest will propbably be a better prediction model to use in this example.  
+Here I started training the model using method "rf".  
+
+```{r,echo=FALSE}
+### This is comment out for report as it takes a long time to run approx. 35 minutes
+#mod2 <- train(classe ~ ., method="rf",data=training,trControl=trainControl(method="cv"),number=3)
+
+#print(mod2)
+```
+
+To look more into model, I executed print model command and found that this model is 99.2% accurate at mtry 27. Thus this would be most efficient model in predicitng our test values.  
+
+Model Fitting
+--------------
+Here I am going to fit the random forest model to our training data.  
+
+```{r}
+# fit a model to predict the classe using everything else as a predictor
+predmodrf <- randomForest(classe ~ ., data = training)
+print(predmodrf)
+
+```
+
+since OOB estimate of  error rate: 0.52% indicate a good fit of the model. Next we will valdidate the model. 
+
+
+Validating model
+-----------------
+
+Since I have have splitted the data into two sets and used the training set (70% of data set) to train our model, next I will use the same model to predict the outcome of the validation set (rest 30% of data).    
+
+
+I have used Predict() function to predict the Classe variable of the validation data set.  
+
+```{r}
+
+# crossvalidate the model using the remaining 30% of data
+predictCrossVald <- predict(predmodrf, crossvald)
+confusionMatrix(predictCrossVald, crossvald$classe)
+```
+
+
+
+### Prediction Accuracy ###
+
+As expected the predictions are not correct in all cases. Next I calculate the accuracy of the prediction:  
+```{r}
+
+pResvald <- postResample(predictCrossVald, crossvald$classe)
+print(pResvald)
+
+```
+
+Expected out of sample error
+-----------------------------
+Here I calculate the expected out of sample error based on the test set that we created for cross-validation:  
+
+```{r}
+confusionMatrix(crossvald$classe, predictCrossVald)
+EOOSEvld <- confusionMatrix(crossvald$classe, predictCrossVald)
+
+outOfSampleErrorvld <- 1 - EOOSEvld$overall[1]
+names(outOfSampleErrorvld) <- "Expected Out of Sample Error"
+print(outOfSampleErrorvld)
+
+```
+
+So, the estimated out-of-sample error of this model is 0.54%
+
+20 cases of test predictions
+----------------------------
+
+As part of the exercise we were given a set of test data to verify our predictive model.   Here I cleanup up the test data following the same steps as I used above for Training and Validation data test.  I also used the same model for predictions for this test cases.   
+
+```{r}
+# apply the same treatment to the final testing data
+pmltest <- read.csv("./data/pml-testing.csv", na.strings= c("NA",""," "))
+pmltest_NAs <- apply(pmltest, 2, function(x) {sum(is.na(x))})
+pmltest_clean <- pmltest[,which(pmltest_NAs == 0)]
+pmltest_clean <- pmltest_clean[8:length(pmltest_clean)]
+
+# predict the classes of the test set
+predictTest <- predict(predmodrf, pmltest_clean)
+print(predictTest)
+
+
+```
+
+Below mentioned is the script verifies the testing data set and creates 20.txt files to verify each individually.  
+
+```{r}
+pml.testing.2 <- pmltest_clean
+pml.testing.2$classe <- predictTest
+
+pml_write_files = function(x) {
+        n = length(x)
+        for (i in 1:n) {
+                filename = paste0("problem_id_", i, ".txt")
+                write.table(x[i], file = filename, quote = FALSE, row.names = FALSE, 
+                            col.names = FALSE)
+        }
+}
+
+
+answers <- pml.testing.2$classe
+
+pml_write_files(answers)
+print(answers)
+
+```
+
+
+
